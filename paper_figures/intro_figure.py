@@ -47,15 +47,21 @@ use_latex_fonts()
 RUNS: dict[str, Config] = {
     "torus": Config(
         environment="torus", method="ntfields", backend="srm", dim=2,
-        resolution=120, seed=1, out_dir="figures/compare/torus_ntfields_srm",
+        # out_dir renamed (posv = positive-V init, srms/methods/backends/srm.py's init_params):
+        # the old "torus_ntfields_srm*" checkpoints predate that fix, so reusing that out_dir would
+        # have _ensure_trained silently keep serving pre-fix runs instead of retraining.
+        resolution=120, seed=1, out_dir="figures/compare/torus_ntfields_posv_srm",
     ),
     "sphere": Config(
         environment="sphere", method="ntfields", backend="srm", dim=2, tau_min=0.25,
-        resolution=120, seed=1, out_dir="figures/compare/sphere_ntfields_tau025_srm",
+        resolution=120, seed=1, out_dir="figures/compare/sphere_ntfields_tau025_posv_srm",
     ),
     "lorentz_hyperbolic": Config(
         environment="lorentz_hyperbolic", method="ntfields", backend="srm", dim=2,
-        resolution=120, seed=1, out_dir="paper_figures/runs/lorentz_hyperbolic_ntfields_srm",
+        # steps/num_collocation left at Config's defaults (4000/2048) — matches torus/sphere above,
+        # and results_figure.py's _MLP_OVERRIDES mirrors this budget so the aggregate table's
+        # fairness check still passes.
+        resolution=120, seed=1, out_dir="paper_figures/runs/lorentz_hyperbolic_ntfields_srm_4k",
     ),
 }
 
@@ -76,6 +82,8 @@ _RENDER_RESOLUTION = {"torus": 500, "sphere": 500}
 # torus (wide, low-profile — closer to the square's own aspect).
 _ZOOM = {"torus": 1.5, "sphere": 1.8}
 
+_VIEW_ANGLE = {"torus": (20.0, 45.0), "sphere": (60.0, -50.0)}  # (elev, azim) degrees
+
 # Methods sharing the NTFields T = base/tau factorization, whose predict() takes the extra
 # tau_bias/tau_min args — mirrors srms.run.main's _NTFIELDS_FAMILY dispatch.
 _NTFIELDS_FAMILY = ("ntfields", "pntfields", "hntfields")
@@ -85,7 +93,7 @@ def _contour_levels(field: np.ndarray) -> list[float]:
     """8 evenly-spaced iso-value levels spanning the field, excluding the (degenerate) 0 and max
     endpoints — matches ``srms/viz_3d.py``'s ``_render_manifold_3d`` convention."""
     vmax = float(np.nanmax(field))
-    return np.linspace(0.0, vmax, 10)[1:-1].tolist()
+    return np.linspace(0.0, vmax, 20)[1:-1].tolist()
 
 
 def _ensure_trained(cfg: Config) -> None:
@@ -148,6 +156,7 @@ def _save_ambient_panel(name: str, cfg: Config) -> None:
     render_ambient_mpl(
         ax, x, y, z, field, start_xyz=start_xyz, obstacle_xyz=obstacle_xyz,
         contour_levels=_contour_levels(field), title="", zoom=_ZOOM[name],
+        elev=_VIEW_ANGLE[name][0], azim=_VIEW_ANGLE[name][1],
     )
     # No axis/title/colorbar on this panel (render_ambient_mpl already turns the 3D axis off), so
     # there's nothing tight_layout needs room for — let the axes fill the whole figure and leave

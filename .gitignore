@@ -14,3 +14,4 @@ mlflow.db
 figures/
 results/
 mlartifacts/
+paper_figures/*.pdf
