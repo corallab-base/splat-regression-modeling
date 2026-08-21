@@ -142,7 +142,8 @@ class SO3Environment:
         self.dim = 4  # storage: unit quaternion
         self.tangent_dim = 3  # the manifold's true dimension — this is what the splat sees
         self.domain: tuple[float, float] = (-1.0, 1.0)  # storage range; SO(3) has no chart box
-        self.axis_labels: tuple[str, str] = ("Gibbs g₁", "Gibbs g₂")
+        # Math-mode subscripts, not raw g₁/g₂ glyphs — see torus.py's TorusEnvironment for why.
+        self.axis_labels: tuple[str, str] = (r"Gibbs $g_1$", r"Gibbs $g_2$")
         self.render_extent: tuple[float, float, float, float] = (-1.0, 1.0, -1.0, 1.0)
         self.has_dense_gt = True  # 3-D polar fast march is tractable (~res^3 cells)
         self.obstacles: tuple[Obstacle, ...] = self._sample_obstacles()

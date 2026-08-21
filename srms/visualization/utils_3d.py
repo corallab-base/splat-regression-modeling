@@ -1231,7 +1231,15 @@ def render_surface(
         height=int(figsize[1] * 100),
     )
     if out_path:
-        fig.write_image(out_path, scale=2)
+        try:
+            fig.write_image(out_path, scale=2)
+        except Exception as exc:
+            # kaleido's headless-Chromium export can fail at *runtime* (e.g. no usable GPU/software
+            # canvas backend in this environment) even though it imported fine, unlike the HAS_PLOTLY
+            # case above — same "skip the bonus 3D export, don't take the whole training run down
+            # with it" policy (the flat-chart figure from srms.viz.render already exists by the time
+            # this runs; see this module's own docstring).
+            print(f"Plotly/kaleido static export failed for {out_path} ({exc}) — skipped.")
 
 
 def render_surface_multiangle(

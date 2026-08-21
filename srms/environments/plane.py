@@ -67,7 +67,8 @@ class PlaneEnvironment:
 
     @property
     def title(self) -> str:
-        return f"plane R^{self.dim} (non-periodic control) — time-to-go ({self.num_obstacles} obstacles)"
+        # $R^{...}$, not a raw "R^..." — see torus.py's TorusEnvironment.title for why.
+        return f"plane $R^{self.dim}$ (non-periodic control) — time-to-go ({self.num_obstacles} obstacles)"
 
     @property
     def gt_label(self) -> str:

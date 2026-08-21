@@ -55,14 +55,22 @@ class TorusEnvironment:
             raise ValueError(f"start has {len(self.start)} coords but dim={self.dim}")
         self.tangent_dim = self.dim
         self.domain: tuple[float, float] = (-float(np.pi), float(np.pi))
-        self.axis_labels: tuple[str, str] = ("θ1 (deg)", "θ2 (deg)")
+        # $\theta$, not a raw θ glyph: LaTeX (unlike matplotlib's own mathtext) has no legacy-font
+        # slot for a bare Unicode Greek letter, so this crashes any checkpoint render that happens
+        # while text.usetex=True is active (e.g. a paper_figures/*.py script that trains a fresh
+        # checkpoint after calling style.use_latex_fonts()) with "Unicode character θ not set up
+        # for use with LaTeX" — math mode works under both usetex and mathtext.
+        self.axis_labels: tuple[str, str] = (r"$\theta_1$ (deg)", r"$\theta_2$ (deg)")
         self.render_extent: tuple[float, float, float, float] = (-180.0, 180.0, -180.0, 180.0)
         self.has_dense_gt = self.dim in (2, 3)  # dense fast marching tractable at 2-D and 3-D
         self.obstacles: tuple[Obstacle, ...] = self._sample_obstacles()
 
     @property
     def title(self) -> str:
-        return f"torus T^{self.dim} — time-to-go ({self.num_obstacles} obstacles)"
+        # $T^{...}$, not a raw "T^..." — a bare "^" outside math mode is LaTeX's superscript
+        # operator and crashes ("Missing $ inserted") any render done while text.usetex=True
+        # (see TorusEnvironment.axis_labels above for the same class of bug).
+        return f"torus $T^{self.dim}$ — time-to-go ({self.num_obstacles} obstacles)"
 
     @property
     def gt_label(self) -> str:

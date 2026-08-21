@@ -235,7 +235,9 @@ class PoincareHyperbolicEnvironment:
         self.ambient_dim = self.dim + 1  # Lorentz-hyperboloid ambient size, for ray-obstacle geometry
         # Chart extent, not a period: only mlp.py reads it, and a ball has nothing periodic to encode.
         self.domain: tuple[float, float] = (-self.trunc_radius, self.trunc_radius)
-        self.axis_labels: tuple[str, str] = ("x₁ (Poincaré chart)", "x₂ (Poincaré chart)")
+        # Math-mode subscripts, not raw x₁/x₂ glyphs — see torus.py's TorusEnvironment for why
+        # (LaTeX has no legacy-font slot for a bare Unicode subscript digit either).
+        self.axis_labels: tuple[str, str] = (r"$x_1$ (Poincaré chart)", r"$x_2$ (Poincaré chart)")
         self.render_extent: tuple[float, float, float, float] = (
             -self.trunc_radius,
             self.trunc_radius,
@@ -252,7 +254,8 @@ class PoincareHyperbolicEnvironment:
 
     @property
     def title(self) -> str:
-        return f"hyperbolic H^{self.dim} (Poincaré ball) — time-to-go ({len(self.obstacles)} obstacles)"
+        # $H^{...}$, not a raw "H^..." — see torus.py's TorusEnvironment.title for why.
+        return f"hyperbolic $H^{self.dim}$ (Poincaré ball) — time-to-go ({len(self.obstacles)} obstacles)"
 
     @property
     def gt_label(self) -> str:

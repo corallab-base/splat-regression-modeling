@@ -100,14 +100,17 @@ class SphereEnvironment:
         self.dim = self.n + 1
         self.tangent_dim = self.n
         self.domain: tuple[float, float] = (-1.0, 1.0)
-        self.axis_labels: tuple[str, str] = ("ψ longitude (deg)", "θ colatitude (deg)")
+        # Math mode, not raw ψ/θ glyphs — see torus.py's TorusEnvironment for why (LaTeX has no
+        # legacy-font slot for a bare Unicode Greek letter, unlike matplotlib's own mathtext).
+        self.axis_labels: tuple[str, str] = (r"$\psi$ longitude (deg)", r"$\theta$ colatitude (deg)")
         self.render_extent: tuple[float, float, float, float] = (-180.0, 180.0, 0.0, 180.0)
         self.has_dense_gt = self.n in (2, 3)
         self.obstacles: tuple[Obstacle, ...] = self._sample_obstacles()
 
     @property
     def title(self) -> str:
-        return f"sphere S^{self.n} — time-to-go ({self.num_obstacles} obstacles)"
+        # $S^{...}$, not a raw "S^..." — see torus.py's TorusEnvironment.title for why.
+        return f"sphere $S^{self.n}$ — time-to-go ({self.num_obstacles} obstacles)"
 
     @property
     def gt_label(self) -> str:

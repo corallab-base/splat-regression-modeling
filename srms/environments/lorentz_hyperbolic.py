@@ -269,7 +269,8 @@ class LorentzHyperbolicEnvironment:
 
     @property
     def title(self) -> str:
-        return f"hyperbolic H^{self.n} — time-to-go ({len(self.obstacles)} obstacles)"
+        # $H^{...}$, not a raw "H^..." — see torus.py's TorusEnvironment.title for why.
+        return f"hyperbolic $H^{self.n}$ — time-to-go ({len(self.obstacles)} obstacles)"
 
     def _sample_ball_obstacles(self, rng: np.random.Generator) -> tuple[BallObstacle, ...]:
         """Hardcoded geodesic-ball obstacles in the middle region of the domain, clear of the source.
