@@ -151,6 +151,7 @@ class Config:
     steps: int = 4000
     lr: float = 3e-3
     init_scale: float = 0.35
+    init_v_scale: float = 0.1
     resolution: int = 120
     seed: int = 1
     error_clip: float = 0.2

@@ -32,7 +32,7 @@ SplatParams = tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]
 
 
 def init_params(key: jax.Array, env, cfg, p: int = 1) -> SplatParams:
-    """Initialise (V, A, B) with zero weights and centres drawn from env.sample_domain.
+    """Initialise (V, A, B) with small positive weights and centres drawn from env.sample_domain.
 
     Centres need environment-specific sampling (a box for the torus, a unit sphere for
     SphereEnvironment), not a generic uniform box, so this delegates to the same host-side sampler
@@ -40,13 +40,24 @@ def init_params(key: jax.Array, env, cfg, p: int = 1) -> SplatParams:
 
     With ``cfg.densify`` the model starts at ``cfg.init_splats`` and grows via ``adapt``; otherwise it
     is a fixed mixture of ``cfg.num_splats``.
+
+    ``V`` is drawn ``|N(0, cfg.init_v_scale)|`` rather than left at exactly zero — the pre-``srms/``
+    exploration (``_archive/preexisting/eikonal_splat.py``'s ``init_splat_params``) found a plain
+    zero/signed init gets stuck organizing which splats should be positive vs. negative contributions
+    from a flat start, whereas starting every splat as a small positive bump was a 59.8% MSE
+    improvement (``autoresearch_results/results.tsv`` iter 8) with further gains from tuning the scale
+    up to 0.1 (iter 10). Sign is otherwise still free to flip during training — only the init is
+    constrained. Set ``cfg.init_v_scale = 0`` to recover the old exact-zero init.
     """
     k = cfg.init_splats if getattr(cfg, "densify", False) else cfg.num_splats
+    vkey, key = jax.random.split(key)
     seed = int(jax.random.randint(key, (), 0, 2**31 - 1))
     centres_np = env.sample_domain(np.random.default_rng(seed), k)
     centres = jnp.asarray(centres_np, dtype=jnp.float32)
     scales = jnp.repeat((cfg.init_scale * jnp.eye(env.tangent_dim))[None], k, axis=0)
-    return jnp.zeros((k, p)), scales, centres
+    v_scale = getattr(cfg, "init_v_scale", 0.0)
+    V = jnp.abs(jax.random.normal(vkey, (k, p))) * v_scale if v_scale > 0.0 else jnp.zeros((k, p))
+    return V, scales, centres
 
 
 def eval_raw(params: SplatParams, X: jnp.ndarray, env) -> jnp.ndarray:
