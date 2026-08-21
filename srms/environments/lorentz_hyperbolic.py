@@ -273,37 +273,12 @@ class LorentzHyperbolicEnvironment:
         return f"hyperbolic $H^{self.n}$ — time-to-go ({len(self.obstacles)} obstacles)"
 
     def _sample_ball_obstacles(self, rng: np.random.Generator) -> tuple[BallObstacle, ...]:
-        """Hardcoded geodesic-ball obstacles in the middle region of the domain, clear of the source.
-
-        Positioned in the central region to create a navigational challenge between source and
-        boundary, rather than periphery clutter.
-        """
+        """Reproducible geodesic-ball obstacles within domain_radius of start, clear of the source —
+        the same primitive torus/sphere/so3/PoincareHyperbolicEnvironment use, so a default (all-
+        ball) scene here is directly comparable to those, and to PoincareHyperbolicEnvironment's own
+        default scene in particular."""
         start = np.asarray(self.start, dtype=np.float64)
-        # For n=2: hardcoded spatial coordinates (x, y) in R^2, each paired with a radius
-        # These are embedded to the hyperboloid: (x, y) → (x, y, sqrt(1 + x² + y²))
-        # Coordinates chosen to be far enough from start (0,0,1) to pass distance check
-        hardcoded_spatial = [
-            (0.7, 0.5, 0.2),      # middle-right region
-            (-1.0, 0.6, 0.20),     # middle-left region
-            (0.5, -0.8, 0.20),     # middle-lower region
-        ]
         obstacles: list[BallObstacle] = []
-        for x, y, rad in hardcoded_spatial[:self.num_obstacles]:
-            # Embed in R^{n+1}: for n=2, (x, y) → (x, y, t) where t = sqrt(1 + x² + y²)
-            # This projects (x,y) to the upper sheet of the hyperboloid via wrap_point logic
-            if self.n == 2:
-                spatial = np.array([x, y], dtype=np.float64)
-                t = np.sqrt(1.0 + np.sum(spatial * spatial))
-                centre = np.concatenate([spatial, [t]])
-            else:
-                # For n != 2, sample instead (hardcoding only defined for n=2)
-                centre = self.sample_domain(rng, 1)[0]
-            # Use provided radius
-            radius = rad
-            # Safety check: ensure obstacle is clear of the source
-            if float(_point_dist_np(centre, start)) > radius + 0.3:
-                obstacles.append((*centre.tolist(), radius))
-        # If we didn't get enough obstacles (e.g., some failed the distance check), pad with random ones
         while len(obstacles) < self.num_obstacles:
             centre = self.sample_domain(rng, 1)[0]
             radius = float(rng.uniform(*self.obstacle_radius))
