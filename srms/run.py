@@ -149,9 +149,9 @@ class Config:
     num_collocation: int = 2048
     colloc_exclude_obstacles: bool = False
     steps: int = 4000
-    lr: float = 3e-3
+    lr: float = 1e-2
     init_scale: float = 0.35
-    init_v_scale: float = 0.1
+    init_v_scale: float = 0.3
     resolution: int = 120
     seed: int = 1
     error_clip: float = 0.2

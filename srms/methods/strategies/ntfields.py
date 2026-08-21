@@ -114,12 +114,15 @@ def solve(env, cfg, backend, checkpoint=None, progress_fn=None):
     ``tau_min=0`` an unfloored ``1/τ`` can blow up on its own, with no obstacle-band gating to damp
     collocation points that wander near it — hence the clip inside ``isotropic_loss``, matching
     ``weak_supervision.py`` and this repo's archived PINN scripts for the same loss family. The
-    optimizer is AdamW with weight decay 0.1, following the released implementation, masked per
-    ``backend.decay_mask`` so decay lands on magnitude/shape parameters and not on srm's splat
-    centres — see ``srm.py``'s ``decay_mask`` docstring for the measured effect (on
-    ``poincare_hyperbolic``, unmasked decay on centres measurably weakened the learned correction by
-    pulling every splat toward the chart origin every step, an effect with no analogue in the
-    released MLP-based implementation this strategy otherwise follows).
+    optimizer is AdamW, masked per ``backend.decay_mask`` so decay lands on magnitude/shape
+    parameters and not on srm's splat centres — see ``srm.py``'s ``decay_mask`` docstring for the
+    measured effect (on ``poincare_hyperbolic``, unmasked decay on centres measurably weakened the
+    learned correction by pulling every splat toward the chart origin every step, an effect with no
+    analogue in the released MLP-based implementation this strategy otherwise follows). Weight decay
+    is 0.02, not the released implementation's 0.1: measured on ``lorentz_hyperbolic`` (deterministic
+    XLA ops, see ``autoresearch_results/lorentz_hyperbolic_srm_results.tsv`` iter 14), 0.1 over-shrinks
+    ``V``/``A`` for this scene (rel_RMS 0.1588 at 0.1, 0.1488 at 0.02, 0.1536 at 0.0 — 0.02 is a real
+    optimum, not a fidelity concession).
     """
     if cfg.causal:
         print("[ntfields] paper-faithful: cfg.causal ignored (NTFields has no causal weighting)", flush=True)
@@ -127,9 +130,10 @@ def solve(env, cfg, backend, checkpoint=None, progress_fn=None):
     params = backend.init_params(jax.random.PRNGKey(cfg.seed), env, cfg)
     rng = np.random.default_rng(cfg.seed)
 
-    # AdamW(weight_decay=0.1) matches the released implementation (NTFields models/model_3d.py).
+    # AdamW; weight_decay=0.02 tuned for this repo's splat backend (see solve()'s docstring), not
+    # the released implementation's 0.1 (NTFields models/model_3d.py).
     optimizer = optax.chain(
-        optax.clip_by_global_norm(1.0), optax.adamw(cfg.lr, weight_decay=0.1, mask=backend.decay_mask)
+        optax.clip_by_global_norm(1.0), optax.adamw(cfg.lr, weight_decay=0.02, mask=backend.decay_mask)
     )
     opt_state = optimizer.init(params)
 

@@ -1,0 +1,24 @@
+iter	metric	delta	decision	description
+0	0.16011	-	baseline	python -m srms.run --environment lorentz_hyperbolic --method ntfields --backend srm --steps 1500 --resolution 80 (proxy budget); full-budget (steps=4000,res=120) rel_RMS=0.09814 for reference
+1	0.15130	-0.00881	keep	init_v_scale 0.1->0.3: 5.5% improvement (more organized early splat signs, matches old-codebase finding)
+2	0.16220	+0.01090	discard	init_v_scale 0.3->0.5: worse, 0.3 stays current best
+3	0.15880	+0.00750	discard	init_scale 0.35->0.5: worse (larger splats break the local tangent-space Gaussian approx faster under negative curvature)
+4	0.16141	+0.01011	discard	init_scale 0.35->0.25: also worse — 0.35 is already a local optimum in both directions, leave it
+5	0.17374	+0.02244	discard	warmup+cosine LR schedule (peak=lr,warmup=5%,end=1%) in ntfields.solve: much worse — decaying LR during adaptive densification starves newly-spawned splats of the LR they need to organize
+6	0.18572	+0.03442	discard	tau_bias 4.0->6.0: much worse — sigmoid saturates too hard, kills early gradient signal
+7	0.15422	+0.00292	discard	scale_floor 0.07->0.12: slightly worse, 0.07 stays current best
+8	0.15163	+0.00033	discard	weight_decay 0.1->0.02 in ntfields.solve: no improvement (within noise), revert to paper-faithful 0.1
+9	0.15724	+0.00594	discard	spawn_per 48->80: worse — faster densification adds capacity before the existing splats organize
+10	0.15651	+0.00521	discard	enable causal source-outward weighting on ntfields Eq.4 residual (was paper-faithful no-op): worse — the isotropic speed loss doesn't benefit from source-outward curriculum the way a BC+PDE loss does
+11	0.15684	+0.00554	discard	init_splats 128->256: worse — more starting capacity doesn't help within 1500 steps; 6 discards in a row on hyperparameter nudges, pivoting to structural changes
+12	0.16177	+0.01047	discard	densify=False (fixed num_splats=384, no growth-event disturbance): worse — confirms adaptive densification is genuinely earning its keep on this scene, not just noise
+#	NOTE: identical rerun of iter1's config (init_v_scale=0.3) gave 0.15130/0.15952/0.15588 across 3 runs — GPU reduction nondeterminism, not seed noise (seed=1 fixed throughout). XLA_FLAGS=--xla_gpu_deterministic_ops=true pins it exactly (0.15583 twice). Switching to that flag for all remaining iterations; iters 2-12's discard calls are only trustworthy where |delta| clearly exceeds ~0.008 (the observed noise band) — spot-re-verify below.
+13	0.15583	-	verify	[deterministic] re-baselined under XLA_FLAGS=--xla_gpu_deterministic_ops=true: init_v_scale=0.1 gives 0.16391, init_v_scale=0.3 gives 0.15583 (delta -0.00808, 4.9%) — the iter1 keep holds up cleanly, same direction/magnitude as the noisy measurement. New clean baseline for remaining iterations: 0.15583.
+14	0.14878	-0.00705	keep	[deterministic, re-check of noisy iter8] weight_decay 0.1->0.02 in ntfields.solve: 4.5% improvement — the noisy iter8 measurement (+0.00033, called discard) was wrong; less aggressive AdamW decay genuinely helps once measured cleanly
+15	0.15355	+0.00477	discard	weight_decay 0.02->0.0: worse — 0.02 is a real sweet spot, not monotonic toward 0
+16	0.15205	+0.00327	discard	[deterministic, re-check on new best] scale_floor 0.07->0.12: still worse — confirms iter7's noisy discard was correct
+17	0.15568	+0.00690	discard	[deterministic] init_v_scale 0.3->0.2: worse — 0.3 is a genuine local optimum on both sides (0.1, 0.2, 0.5 all worse)
+18	0.14567	-0.00311	keep	[deterministic] lr 3e-3->5e-3: 2.1% improvement — faster LR helps within the fixed step budget
+19	0.14178	-0.00389	keep	[deterministic] lr 5e-3->7e-3: 2.7% further improvement — trend continues
+20	0.13634	-0.00544	keep	[deterministic] lr 7e-3->1e-2: 3.8% further improvement, still climbing — 20-iteration bound reached here; lr is not yet at its ceiling, a good next experiment to resume with
+#	FINAL CONFIRMATION at real target budget (steps=4000, resolution=120 — no CLI overrides, deterministic XLA ops): original defaults (init_v_scale=0.1, weight_decay=0.1, lr=3e-3) give rel_RMS=0.10245 (num_params=4088); kept config (init_v_scale=0.3, weight_decay=0.02, lr=1e-2) gives rel_RMS=0.09595 (num_params=4048) — 6.3% relative improvement, smaller than the 16.9% seen at the 1500-step proxy budget used during search. lr=1e-2 was tuned for the short proxy budget and its marginal benefit shrinks (but stays positive) at 4000 steps — a budget-matched follow-up sweep of lr specifically at steps=4000 is the natural next experiment.
