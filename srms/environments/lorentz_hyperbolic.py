@@ -282,9 +282,9 @@ class LorentzHyperbolicEnvironment:
         # These are embedded to the hyperboloid: (x, y) → (x, y, sqrt(1 + x² + y²))
         # Coordinates chosen to be far enough from start (0,0,1) to pass distance check
         hardcoded_spatial = [
-            (0.7, 0.5, 0.40),      # middle-right region
-            (-0.65, 0.6, 0.3),     # middle-left region
-            (0.3, -0.8, 0.54),     # middle-lower region
+            (0.7, 0.5, 0.2),      # middle-right region
+            (-1.0, 0.6, 0.20),     # middle-left region
+            (0.5, -0.8, 0.20),     # middle-lower region
         ]
         obstacles: list[BallObstacle] = []
         for x, y, rad in hardcoded_spatial[:self.num_obstacles]:

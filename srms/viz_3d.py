@@ -186,6 +186,34 @@ def _render_manifold_3d(
     pred_img = np.where(inside, np.nan, prediction).reshape(shape)
     error_img = pred_img - gt_img
 
+    out_dir = f"{cfg.out_dir}/3d_views"
+    vmax = float(np.nanmax(gt_img))
+
+    # A diverged training run (e.g. NTFields hitting NaN loss) leaves `prediction` entirely NaN —
+    # nothing meaningful to plot for prediction/error, and the gradient-descent path below would
+    # have no finite direction to follow anywhere. Render ground-truth only rather than 8 blank
+    # panels, and say so plainly instead of the silent-garbage-or-crash default.
+    if not np.isfinite(pred_img).any():
+        print(
+            f"[viz_3d] prediction field is entirely non-finite (training likely diverged to NaN) — "
+            f"rendering ground-truth-only 3D views to {out_dir}/"
+        )
+        xc, yc, zc = close_periodic(x, periodic), close_periodic(y, periodic), close_periodic(z, periodic)
+        gt_c = close_periodic(gt_img, periodic)
+        contour_levels = np.linspace(0.0, vmax, 10)[1:-1].tolist()
+        gt_contours = compute_field_contours(gt_c, xc, yc, zc, contour_levels)
+        render_surface_multiangle(
+            xc, yc, zc, gt_c, out_dir=out_dir, title="Ground truth", cmap="viridis", front=front,
+            start_xyz=start_xyz, obstacle_xyz=obstacle_xyz, obstacle_rings=obstacle_rings,
+            obstacle_patches=obstacle_patches, field_contours=gt_contours, vmin=0.0, vmax=vmax,
+        )
+        plotly_surface(
+            xc, yc, zc, gt_c, cmap="viridis", vmin=0.0, vmax=vmax, start_xyz=start_xyz,
+            obstacle_xyz=obstacle_xyz, obstacle_rings=obstacle_rings, obstacle_patches=obstacle_patches,
+            field_contours=gt_contours, title=f"{env.title} — ground truth", out_html=f"{cfg.out_dir}/3d_interactive_gt.html",
+        )
+        return
+
     # Path to the farthest free point in the domain — a self-contained, geometry-agnostic
     # illustration of the routing (no separate "goal" concept exists for a pure time-to-go field).
     start_idx = nearest_grid_index(x, y, z, start_xyz)
@@ -202,9 +230,6 @@ def _render_manifold_3d(
     gt_c = close_periodic(gt_img, periodic)
     pred_c = close_periodic(pred_img, periodic)
     error_c = close_periodic(error_img, periodic)
-
-    out_dir = f"{cfg.out_dir}/3d_views"
-    vmax = float(np.nanmax(gt_img))
 
     # Iso-value contours (skipped on the error panel, matching srms.viz.render's flat-chart
     # convention) — computed on the closed grids so a level line traces cleanly through the seam.

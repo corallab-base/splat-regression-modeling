@@ -859,8 +859,8 @@ def extract_path_grid(
             ]
         )
         norm = np.linalg.norm(grad)
-        if norm < 1e-9:
-            break
+        if not np.isfinite(norm) or norm < 1e-9:
+            break  # NaN gradient (e.g. a diverged/all-NaN field) is "stuck", not a step to take
         pos = pos - step_size * grad / norm
         pos[0] = pos[0] % h if periodic[0] else np.clip(pos[0], 0, h - 1)
         pos[1] = pos[1] % w if periodic[1] else np.clip(pos[1], 0, w - 1)
