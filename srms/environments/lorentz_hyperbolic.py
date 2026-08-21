@@ -81,8 +81,8 @@ def _mink_dot_np(u: np.ndarray, v: np.ndarray) -> np.ndarray:
 
 def _radial_cdf(n: int, domain_radius: float, num: int = 4000) -> tuple[np.ndarray, np.ndarray]:
     """Numerically inverted CDF of the hyperbolic-volume radial density sinh(r)^(n-1) on
-    [0, domain_radius], used by sample_domain/_sample_ball_obstacles/_sample_ray_obstacles for
-    volume-correct ball sampling.
+    [0, domain_radius], used by sample_domain and (at a capped radius, via _sample_obstacle_point)
+    _sample_ball_obstacles/_sample_ray_obstacles for volume-correct ball sampling.
 
     Hyperbolic volume grows like sinh(r)^(n-1) dr (the "sphere of radius r" has that much
     (n-1)-measure), so uniform-in-r sampling would badly undersample the outer region — unlike
@@ -236,6 +236,8 @@ class LorentzHyperbolicEnvironment:
     num_ray_obstacles: int = 0
     ray_length: tuple[float, float] = (0.8, 1.8)
     ray_thickness: tuple[float, float] = (0.08, 0.15)
+    obstacle_max_radius_frac: float = 0.75  # cap obstacle placement below domain_radius — see
+    # _sample_obstacle_point; matches PoincareHyperbolicEnvironment's own obstacle_max_radius_frac
     slowness_max: float = 10.0
     slow_width: float = 0.1
     seed: int = 1
@@ -261,6 +263,12 @@ class LorentzHyperbolicEnvironment:
         self._start_frame_np = np.asarray(_lorentz_frame(start_arr, self.n))  # [dim, n], reused by
         # sample_domain/boundary_ring_np (both draw eta-unit tangent directions at start)
         self._radial_cdf_r, self._radial_cdf_p = _radial_cdf(self.n, self.domain_radius)
+        # separate, tighter CDF for obstacle placement (see _sample_obstacle_point) — hyperbolic
+        # volume grows like sinh(r)^(n-1), so reusing the full-domain CDF above would put nearly
+        # every obstacle in the thin shell right at domain_radius
+        self._obstacle_radial_cdf_r, self._obstacle_radial_cdf_p = _radial_cdf(
+            self.n, self.obstacle_max_radius_frac * self.domain_radius
+        )
         # one shared rng stream so ball obstacles are sampled before rays, deterministic given seed
         rng = np.random.default_rng(self.seed + _OBSTACLE_SEED_OFFSET)
         self.ball_obstacles: tuple[BallObstacle, ...] = self._sample_ball_obstacles(rng)
@@ -273,23 +281,30 @@ class LorentzHyperbolicEnvironment:
         return f"hyperbolic $H^{self.n}$ — time-to-go ({len(self.obstacles)} obstacles)"
 
     def _sample_ball_obstacles(self, rng: np.random.Generator) -> tuple[BallObstacle, ...]:
-        """Reproducible geodesic-ball obstacles within domain_radius of start, clear of the source —
-        the same primitive torus/sphere/so3/PoincareHyperbolicEnvironment use, so a default (all-
-        ball) scene here is directly comparable to those, and to PoincareHyperbolicEnvironment's own
-        default scene in particular."""
+        """Reproducible geodesic-ball obstacles within obstacle_max_radius_frac*domain_radius of
+        start, clear of both the source and the domain edge — the same primitive torus/sphere/so3/
+        PoincareHyperbolicEnvironment use, so a default (all-ball) scene here is directly comparable
+        to those, and to PoincareHyperbolicEnvironment's own default scene in particular. Drawn via
+        _sample_obstacle_point, not sample_domain, so obstacles spread through the interior instead
+        of piling up at domain_radius (see that method's docstring)."""
         start = np.asarray(self.start, dtype=np.float64)
         obstacles: list[BallObstacle] = []
         while len(obstacles) < self.num_obstacles:
-            centre = self.sample_domain(rng, 1)[0]
+            centre = self._sample_obstacle_point(rng, 1)[0]
             radius = float(rng.uniform(*self.obstacle_radius))
-            if float(_point_dist_np(centre, start)) > radius + 0.3:
+            d_from_start = float(_point_dist_np(centre, start))
+            clear_of_source = d_from_start > radius + 0.3
+            clear_of_edge = self.domain_radius - d_from_start > radius + 0.3
+            if clear_of_source and clear_of_edge:
                 obstacles.append((*centre.tolist(), radius))
         return tuple(obstacles)
 
     def _sample_ray_obstacles(self, rng: np.random.Generator) -> tuple[RayObstacle, ...]:
-        """Reproducible geodesic-ray obstacles within domain_radius of start, clear of the source.
+        """Reproducible geodesic-ray obstacles within obstacle_max_radius_frac*domain_radius of
+        start, clear of the source.
 
-        Each ray originates at a point p sampled via sample_domain, with direction = the tangent
+        Each ray originates at a point p sampled via _sample_obstacle_point (not sample_domain, for
+        the same edge-piling reason _sample_ball_obstacles avoids it), with direction = the tangent
         at p continuing the start->p geodesic *outward* (away from start). For a unit-speed
         geodesic gamma(t) = cosh(t)*start + sinh(t)*w (w = tangent at start toward p), the
         velocity at t=d (i.e. at p) is gamma'(d) = sinh(d)*start + cosh(d)*w — general facts for
@@ -302,7 +317,7 @@ class LorentzHyperbolicEnvironment:
         start = jnp.asarray(self.start, dtype=jnp.float32)
         obstacles: list[RayObstacle] = []
         while len(obstacles) < self.num_ray_obstacles:
-            p_np = self.sample_domain(rng, 1)[0]
+            p_np = self._sample_obstacle_point(rng, 1)[0]
             p = jnp.asarray(p_np, dtype=jnp.float32)
             length = float(rng.uniform(*self.ray_length))
             thickness = float(rng.uniform(*self.ray_thickness))
@@ -462,18 +477,31 @@ class LorentzHyperbolicEnvironment:
 
     # ---- sampling --------------------------------------------------------
 
-    def sample_domain(self, rng: np.random.Generator, n: int) -> np.ndarray:
-        """Volume-correct samples in the geodesic ball of radius domain_radius around start (see
-        _radial_cdf); direction is uniform (Euclidean-unit combination of the eta-orthonormal
-        start frame), radius drawn from the sinh(r)^(n-1)-weighted CDF, embedded via the
-        hyperboloid exponential map at start."""
+    def _sample_from_radial_cdf(self, rng: np.random.Generator, n: int, radial_r: np.ndarray, radial_p: np.ndarray) -> np.ndarray:
+        """Shared machinery for sample_domain/_sample_obstacle_point: direction uniform (Euclidean-
+        unit combination of the eta-orthonormal start frame), radius drawn from the given
+        sinh(r)^(n-1)-weighted CDF, embedded via the hyperboloid exponential map at start."""
         u = rng.uniform(0.0, 1.0, size=n)
-        r = np.interp(u, self._radial_cdf_p, self._radial_cdf_r)
+        r = np.interp(u, radial_p, radial_r)
         z = rng.standard_normal((n, self.n))
         z /= np.linalg.norm(z, axis=-1, keepdims=True) + 1e-12
         tangent = z @ self._start_frame_np.T
         start = np.asarray(self.start, dtype=np.float64)
         return np.cosh(r)[:, None] * start[None, :] + np.sinh(r)[:, None] * tangent
+
+    def sample_domain(self, rng: np.random.Generator, n: int) -> np.ndarray:
+        """Volume-correct samples in the geodesic ball of radius domain_radius around start (see
+        _radial_cdf)."""
+        return self._sample_from_radial_cdf(rng, n, self._radial_cdf_r, self._radial_cdf_p)
+
+    def _sample_obstacle_point(self, rng: np.random.Generator, n: int) -> np.ndarray:
+        """Obstacle centres/ray-origins, volume-correct but capped to obstacle_max_radius_frac *
+        domain_radius rather than the full domain — sample_domain's full-radius CDF concentrates
+        almost all its mass in the thin shell right at domain_radius (hyperbolic volume grows like
+        sinh(r)^(n-1)), so drawing obstacles from it piles them up against the domain edge instead
+        of spreading them through the interior. Mirrors PoincareHyperbolicEnvironment's own
+        obstacle_max_radius_frac cap on ball-obstacle placement."""
+        return self._sample_from_radial_cdf(rng, n, self._obstacle_radial_cdf_r, self._obstacle_radial_cdf_p)
 
     # ---- ground truth / rendering -----------------------------------------------------------
 

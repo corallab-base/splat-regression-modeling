@@ -221,6 +221,8 @@ class PoincareHyperbolicEnvironment:
     num_ray_obstacles: int = 0
     ray_length: tuple[float, float] = (0.8, 1.8)
     ray_thickness: tuple[float, float] = (0.08, 0.15)
+    obstacle_max_radius_frac: float = 0.75  # cap obstacle placement below trunc_radius — see
+    # _sample_obstacle_point; matches LorentzHyperbolicEnvironment's own obstacle_max_radius_frac
     slowness_max: float = 10.0
     slow_width: float = 0.15
     trunc_radius: float = 0.9
@@ -261,6 +263,21 @@ class PoincareHyperbolicEnvironment:
     def gt_label(self) -> str:
         return "ground truth — Euclidean FMM, conformally rescaled"
 
+    def _sample_obstacle_point(self, rng: np.random.Generator) -> np.ndarray:
+        """A single chart point, uniform-by-*chart*-volume within obstacle_max_radius_frac *
+        trunc_radius of the origin — deliberately not sample_domain's hyperbolic-*volume*-uniform
+        draw over the full ball. sample_domain concentrates almost all of its mass in the thin
+        annulus right at trunc_radius (see the module docstring's point 2 and volume's λ ≈ 10.5 at
+        the wall), so obstacles drawn from it pile up against the domain edge instead of spreading
+        through the interior. The ``** (1/dim)`` radius makes this draw Euclidean-uniform (i.e.
+        chart-uniform) within the capped sub-disk. Shared by _sample_ball_obstacles and
+        _sample_ray_obstacles; matches LorentzHyperbolicEnvironment's own
+        obstacle_max_radius_frac-capped _sample_obstacle_point."""
+        direction = rng.standard_normal(self.dim)
+        direction /= np.linalg.norm(direction)
+        radius = (self.obstacle_max_radius_frac * self.trunc_radius) * rng.uniform(0.0, 1.0) ** (1.0 / self.dim)
+        return direction * radius
+
     def _sample_ball_obstacles(self, rng: np.random.Generator) -> tuple[BallObstacle, ...]:
         """Reproducible geodesic-ball obstacles, clear of both the source and the rim wall — the
         same primitive torus/sphere/so3/LorentzHyperbolicEnvironment use, so a default (all-ball)
@@ -269,9 +286,7 @@ class PoincareHyperbolicEnvironment:
         start = np.asarray(self.start, dtype=float)
         obstacles: list[BallObstacle] = []
         while len(obstacles) < self.num_obstacles:
-            direction = rng.standard_normal(self.dim)
-            direction /= np.linalg.norm(direction)
-            centre = direction * (0.75 * self.trunc_radius) * rng.uniform(0.0, 1.0) ** (1.0 / self.dim)
+            centre = self._sample_obstacle_point(rng)
             radius = float(rng.uniform(*self.obstacle_radius))
             clear_of_source = _distance_np(centre, start) > radius + 0.3
             clear_of_wall = self.wall_distance - _distance_np(centre, np.zeros(self.dim)) > radius + 0.3
@@ -282,14 +297,15 @@ class PoincareHyperbolicEnvironment:
     def _sample_ray_obstacles(self, rng: np.random.Generator) -> tuple[RayObstacle, ...]:
         """Reproducible capsule-thickened geodesic-ray obstacles, mirroring
         LorentzHyperbolicEnvironment's ``_sample_ray_obstacles`` exactly (same "outward tangent"
-        construction, same clearance rule) but sampled/stored in *ambient Lorentz-hyperboloid*
-        coordinates via ``_to_hyperboloid`` — geodesics are circular arcs in the Poincaré ball, so
-        the tangent-continuation algebra that construction relies on only closes in the hyperboloid
+        construction, same clearance rule, same _sample_obstacle_point-not-sample_domain origin
+        placement) but sampled/stored in *ambient Lorentz-hyperboloid* coordinates via
+        ``_to_hyperboloid`` — geodesics are circular arcs in the Poincaré ball, so the
+        tangent-continuation algebra that construction relies on only closes in the hyperboloid
         chart, not here."""
         start_ambient = _to_hyperboloid(jnp.asarray(self.start, dtype=jnp.float32))
         obstacles: list[RayObstacle] = []
         while len(obstacles) < self.num_ray_obstacles:
-            p_np = self.sample_domain(rng, 1)[0]
+            p_np = self._sample_obstacle_point(rng)
             length = float(rng.uniform(*self.ray_length))
             thickness = float(rng.uniform(*self.ray_thickness))
             p_ambient = _to_hyperboloid(jnp.asarray(p_np, dtype=jnp.float32))
