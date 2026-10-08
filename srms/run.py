@@ -79,7 +79,7 @@ class Config:
 
     """
 
-    environment: Literal["torus", "plane", "sphere", "poincare_hyperbolic", "lorentz_hyperbolic"] = "torus"
+    environment: Literal["torus", "plane", "sphere", "poincare_hyperbolic", "lorentz_hyperbolic", "pendulum"] = "torus"
     dim: int = 2
     method: Literal["eikonal", "weak_supervision", "ntfields", "pntfields", "hntfields"] = "eikonal"
     backend: Literal["srm", "mlp", "mlp_raw", "mlp_resnet"] = "srm"
@@ -93,6 +93,20 @@ class Config:
     num_ray_obstacles: int = 0  # hyperbolic only (poincare_hyperbolic / lorentz_hyperbolic)
     ray_length: tuple[float, float] = (0.8, 1.8)  # hyperbolic only
     ray_thickness: tuple[float, float] = (0.08, 0.15)  # hyperbolic only
+    link_lengths: tuple[float, float] = (1.0, 1.0)  # pendulum only: (L1, L2)
+    link_thickness: float = 0.06  # pendulum only
+    # Default scene forces a genuine (non-degenerate) elbow-bend avoidance, verified via FMM ground
+    # truth. obstacle1 sits inside the reach annulus along the midpoint angle between start and goal;
+    # its interaction with a 2-link arm's C-space is sharply bimodal — for any obstacle size/penalty,
+    # the FMM-optimal route is either a <8° "shrug past it" deviation or a >125° swing that wraps
+    # through the periodic seam (nothing moderate in between; the latter needs `weak_supervision`,
+    # not plain `ntfields`, to train reliably — see that method's own docstring). This default picks
+    # the largest reliably-small-regime obstacle found (radius 0.5, requiring pendulum_slowness_max=14
+    # to make the deviation worth it at all — the default slowness_max=10 gives an even smaller,
+    # near-invisible wobble), so the bend is real but modest: confirm with pendulum_query.py.
+    pendulum_obstacle1 = None # : tuple[float, float, float] = (1.58, 0.863, 0.5)  # pendulum only: (cx, cy, r)
+    pendulum_obstacle2: tuple[float, float, float] = (-1.8, -1.0, 0.8)  # pendulum only: (cx, cy, r)
+    pendulum_slowness_max: float = 14.0  # pendulum only — see obstacle1 note above
     # causal weighting (all strategies)
     causal: bool = True
     causal_strength: float = 5.0
@@ -216,6 +230,24 @@ def _build_env(cfg: Config):
             ray_length=cfg.ray_length,
             ray_thickness=cfg.ray_thickness,
             slowness_max=cfg.slowness_max,
+            slow_width=cfg.slow_width,
+            seed=cfg.seed,
+        )
+    if cfg.environment == "pendulum":
+        if cfg.dim != 2:
+            raise ValueError("pendulum is always a 2-joint (T^2) arm; --dim must be 2 (the default)")
+        start = cfg.start if cfg.start is not None else (0.0, 0.0)  # centre of the config-space plot
+        obstacles = [] 
+        if cfg.pendulum_obstacle1 is not None:
+            obstacles.append(cfg.pendulum_obstacle1)
+        if cfg.pendulum_obstacle2 is not None:
+            obstacles.append(cfg.pendulum_obstacle2)
+        return ENVIRONMENTS["pendulum"](
+            start=start,
+            link_lengths=cfg.link_lengths,
+            link_thickness=cfg.link_thickness,
+            obstacles=obstacles,
+            slowness_max=cfg.pendulum_slowness_max,
             slow_width=cfg.slow_width,
             seed=cfg.seed,
         )

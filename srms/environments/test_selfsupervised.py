@@ -123,7 +123,13 @@ def main() -> int:
     from srms.methods.strategies import eikonal, ntfields, pntfields
 
     strategies = {"eikonal": eikonal, "ntfields": ntfields, "pntfields": pntfields}
-    manifolds = [("torus", {"dim": 2}), ("sphere", {"n": 2}), ("hyperbolic", {"dim": 2}), ("so3", {})]
+    manifolds = [
+        ("torus", {"dim": 2}),
+        ("pendulum", {}),
+        ("sphere", {"n": 2}),
+        ("hyperbolic", {"dim": 2}),
+        ("so3", {}),
+    ]
 
     print("1. static: no 'ground_truth' anywhere under srms/methods")
     static = check_static(root)

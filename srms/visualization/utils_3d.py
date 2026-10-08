@@ -830,7 +830,7 @@ def nearest_grid_index(x: np.ndarray, y: np.ndarray, z: np.ndarray, point: tuple
 def extract_path_grid(
     field: np.ndarray,
     start_idx: tuple[int, int],
-    goal_idx: tuple[int, int] | None = None,
+    goal_idx: tuple[int, int],
     num_steps: int = 100,
     periodic: tuple[bool, bool] = (True, True),
     step_size: float = 0.6,
@@ -841,10 +841,18 @@ def extract_path_grid(
     Index-space only — agnostic to what the axes mean geometrically, so it works identically for
     the torus's two periodic angles and the sphere's (non-periodic colatitude, periodic azimuth)
     grid via the ``periodic`` flag per axis. Map the result to 3D with ``grid_path_to_xyz``.
+
+    ``field`` is assumed minimized (≈0) at ``start_idx`` (a time-to-go field from that source) — so
+    ``-∇field`` there is ~0/discretization noise, not a direction to walk. The descent instead begins
+    at ``goal_idx`` (real gradient signal) and walks downhill via ``-∇field`` until it reaches
+    ``start_idx`` (guaranteed reachable: the field decreases monotonically toward its global minimum),
+    the standard Eikonal/fast-marching backtracking method; the collected path is then reversed so the
+    returned array still runs ``path[0] ≈ start`` to ``path[-1] ≈ goal`` — callers see no change in
+    contract, only in (corrected) behavior.
     """
     h, w = field.shape
     field_filled = np.where(np.isnan(field), np.nanmax(field), field)
-    pos = np.array(start_idx, dtype=float)
+    pos = np.array(goal_idx, dtype=float)
     path = [pos.copy()]
     for _ in range(num_steps):
         i0, j0 = int(round(pos[0])) % h, int(round(pos[1])) % w
@@ -865,9 +873,9 @@ def extract_path_grid(
         pos[0] = pos[0] % h if periodic[0] else np.clip(pos[0], 0, h - 1)
         pos[1] = pos[1] % w if periodic[1] else np.clip(pos[1], 0, w - 1)
         path.append(pos.copy())
-        if goal_idx is not None and np.linalg.norm(pos - np.array(goal_idx, dtype=float)) < goal_tol:
+        if np.linalg.norm(pos - np.array(start_idx, dtype=float)) < goal_tol:
             break
-    return np.array(path)
+    return np.array(path)[::-1]
 
 
 def grid_path_to_xyz(path_idx: np.ndarray, x: np.ndarray, y: np.ndarray, z: np.ndarray) -> np.ndarray:
